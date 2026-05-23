@@ -8,7 +8,10 @@ app.use(express.json());
 const authRoutes = require('./routes/authRoutes');
 app.use('/api/auth', authRoutes);
 
-// Test database connection and create tables
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
+app.use('/api/subscriptions', subscriptionRoutes);
+
+// Test database connection ands create tables
 const initDB = async () => {
   try {
     await pool.query(`
