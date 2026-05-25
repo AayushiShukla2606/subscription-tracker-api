@@ -108,9 +108,80 @@ const deleteSubscription = async (req, res) => {
   }
 };
 
+// Get spending insights
+const getInsights = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    // Get all subscriptions
+    const subscriptions = await pool.query(
+      `SELECT * FROM subscriptions WHERE user_id = $1`,
+      [userId]
+    );
+
+    const data = subscriptions.rows;
+
+    // Total subscriptions count
+    const totalCount = data.length;
+
+    // Monthly & yearly spend
+    let monthlySpend = 0;
+    let yearlySpend = 0;
+
+    data.forEach(sub => {
+      if (sub.billing_cycle === 'monthly') {
+        monthlySpend += parseFloat(sub.amount);
+        yearlySpend += parseFloat(sub.amount) * 12;
+      } else if (sub.billing_cycle === 'yearly') {
+        yearlySpend += parseFloat(sub.amount);
+        monthlySpend += parseFloat(sub.amount) / 12;
+      }
+    });
+
+    // Renewing in next 7 days
+    const today = new Date();
+    const next7Days = new Date();
+    next7Days.setDate(today.getDate() + 7);
+
+    const renewingSoon = data
+  .filter(sub => {
+    const renewalDate = new Date(sub.next_renewal);
+    return renewalDate >= today && renewalDate <= next7Days;
+  })
+  .map(sub => ({
+    name: sub.name,
+    amount: sub.amount,
+    billing_cycle: sub.billing_cycle,
+    category: sub.category,
+    next_renewal: sub.next_renewal
+  }));
+    // Spend by category
+    const byCategory = {};
+    data.forEach(sub => {
+      const cat = sub.category || 'uncategorized';
+      if (!byCategory[cat]) {
+        byCategory[cat] = 0;
+      }
+      byCategory[cat] += parseFloat(sub.amount);
+    });
+
+    res.status(200).json({
+      total_subscriptions: totalCount,
+      monthly_spend: monthlySpend.toFixed(2),
+      yearly_spend: yearlySpend.toFixed(2),
+      renewing_soon: renewingSoon,
+      spend_by_category: byCategory
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
 module.exports = { 
   addSubscription, 
   getSubscriptions, 
   updateSubscription, 
-  deleteSubscription 
+  deleteSubscription,
+  getInsights 
 };

@@ -5,12 +5,14 @@ const {
   addSubscription,
   getSubscriptions,
   updateSubscription,
-  deleteSubscription
+  deleteSubscription,
+  getInsights
 } = require('../controllers/subscriptionController');
 
 router.post('/', authMiddleware, addSubscription);
 router.get('/', authMiddleware, getSubscriptions);
 router.put('/:id', authMiddleware, updateSubscription);
 router.delete('/:id', authMiddleware, deleteSubscription);
+router.get('/insights', authMiddleware, getInsights);
 
 module.exports = router;
