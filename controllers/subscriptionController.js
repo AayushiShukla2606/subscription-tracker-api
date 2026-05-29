@@ -165,17 +165,175 @@ const getInsights = async (req, res) => {
       byCategory[cat] += parseFloat(sub.amount);
     });
 
+    const aiSuggestions = generateInsights(data);
+
     res.status(200).json({
       total_subscriptions: totalCount,
       monthly_spend: monthlySpend.toFixed(2),
       yearly_spend: yearlySpend.toFixed(2),
       renewing_soon: renewingSoon,
-      spend_by_category: byCategory
+      spend_by_category: byCategory,
+      ai_suggestions: aiSuggestions
     });
 
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
+};
+
+// AI-powered rule-based recommendation engine
+const generateInsights = (subscriptions) => {
+
+  const suggestions = [];
+  const categories = {};
+  const serviceNames = subscriptions.map(s => s.name.toLowerCase());
+  const flaggedOverlaps = new Set();
+  // Group by category
+  subscriptions.forEach(sub => {
+    const cat = sub.category || 'uncategorized';
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push(sub);
+  });
+
+  subscriptions.forEach(sub => {
+    const amount = parseFloat(sub.amount);
+    const name = sub.name.toLowerCase();
+    const category = sub.category?.toLowerCase();
+
+    // Rule 1 — High cost alert (generic)
+    if (sub.billing_cycle === 'monthly' && amount > 500) {
+      suggestions.push({
+        subscription: sub.name,
+        type: 'high_cost',
+        severity: amount > 1500 ? 'high' : 'medium',
+        message: `₹${amount}/month is significant. Review if you're actively using ${sub.name}.`
+      });
+    }
+
+    // Rule 2 — Yearly trap
+    if (sub.billing_cycle === 'yearly') {
+      const monthlyEquivalent = amount / 12;
+      if (monthlyEquivalent > 800) {
+        suggestions.push({
+          subscription: sub.name,
+          type: 'yearly_trap',
+          severity: 'medium',
+          message: `${sub.name} costs ₹${monthlyEquivalent.toFixed(0)}/month on yearly plan. Compare with monthly pricing — you might save money.`
+        });
+      }
+    }
+
+    // Rule 3 — Cloud optimization (never suggest cancel)
+    if (category === 'cloud') {
+      if (amount > 2000) {
+        suggestions.push({
+          subscription: sub.name,
+          type: 'cloud_optimization',
+          severity: 'medium',
+          message: `Your ${sub.name} bill is ₹${amount}. Consider reserved instances or savings plans — can reduce costs by up to 72%.`
+        });
+      }
+      if (serviceNames.includes('aws') && serviceNames.includes('gcp')) {
+        suggestions.push({
+          subscription: sub.name,
+          type: 'cloud_overlap',
+          severity: 'low',
+          message: `You're using multiple cloud providers. Consider consolidating to reduce operational overhead.`
+        });
+      }
+    }
+
+    // Rule 4 — Overlapping AI tools
+    if (
+      (name.includes('chatgpt') || name.includes('openai')) &&
+      (serviceNames.includes('claude') || serviceNames.includes('anthropic')) &&
+      !flaggedOverlaps.has('chatgpt-claude')
+    ) {
+      flaggedOverlaps.add('chatgpt-claude');
+      const aiTools = subscriptions.filter(s =>
+        s.name.toLowerCase().includes('chatgpt') ||
+        s.name.toLowerCase().includes('claude')
+      );
+      const minSaving = Math.min(...aiTools.map(s => parseFloat(s.amount)));
+      const totalAISpend = aiTools.reduce((sum, s) => sum + parseFloat(s.amount), 0);
+        
+      suggestions.push({
+        subscription: sub.name,
+        type: 'overlap',
+        severity: 'high',
+        message: `You have both ChatGPT and Claude — overlapping AI assistants costing ₹${totalAISpend}/month. Both do similar tasks — pick the one you use most and cancel the other.`
+      });
+    }
+    // Rule 5 — Overlapping music
+    if (
+      name.includes('spotify') &&
+      serviceNames.includes('youtube premium') &&
+      !flaggedOverlaps.has('spotify-youtube')
+    ) {
+      flaggedOverlaps.add('spotify-youtube');
+      suggestions.push({
+        subscription: sub.name,
+        type: 'overlap',
+        severity: 'high',
+        message: `Spotify and YouTube Premium both offer music streaming. Consider cancelling one — save ₹${amount}/month.`
+      });
+    }
+
+    // Rule 6 — Overlapping streaming
+    const streamingServices = ['netflix', 'amazon prime', 'hotstar', 'zee5', 'sonyliv'];
+    const userStreaming = streamingServices.filter(s => serviceNames.includes(s));
+    if (userStreaming.length >= 3 && streamingServices.some(s => name.includes(s))) {
+      suggestions.push({
+        subscription: sub.name,
+        type: 'overlap',
+        severity: 'high',
+        message: `You have ${userStreaming.length} streaming services. You likely only need 1-2. Review and cancel unused ones.`
+      });
+    }
+
+    // Rule 7 — Overlapping professional
+    if (
+      name.includes('linkedin') &&
+      (serviceNames.includes('naukri') || serviceNames.includes('indeed'))
+    ) {
+        const professionalTools = subscriptions.filter(s =>
+        s.name.toLowerCase().includes('linkedin') ||
+        s.name.toLowerCase().includes('naukri') ||
+        s.name.toLowerCase().includes('indeed')
+      );
+      const totalProfessionalSpend = professionalTools.reduce((sum, s) => sum + parseFloat(s.amount), 0);
+      suggestions.push({
+        subscription: sub.name,
+        type: 'overlap',
+        severity: 'medium',
+        message: `LinkedIn Premium and job portals overlap — costing ₹${totalProfessionalSpend}/month combined. If actively job hunting keep LinkedIn, otherwise consider cancelling both and using free tiers.`
+      });
+    }
+  });
+
+  // Rule 8 — Too many in same category
+  Object.keys(categories).forEach(cat => {
+    if (cat !== 'cloud' && categories[cat].length >= 3) {
+      const totalCost = categories[cat].reduce((sum, s) => sum + parseFloat(s.amount), 0);
+      suggestions.push({
+        subscription: `${cat} category`,
+        type: 'consolidate',
+        severity: 'medium',
+        message: `You have ${categories[cat].length} ${cat} subscriptions costing ₹${totalCost.toFixed(0)}/month total. Consider consolidating.`
+      });
+    }
+  });
+
+  // No suggestions — healthy profile
+  if (suggestions.length === 0) {
+    suggestions.push({
+      type: 'healthy',
+      severity: 'low',
+      message: 'Your subscription portfolio looks healthy! No major issues detected.'
+    });
+  }
+
+  return suggestions;
 };
 
 module.exports = { 
