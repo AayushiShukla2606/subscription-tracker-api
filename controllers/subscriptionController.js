@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { sendRenewalAlert } = require('../utils/emailService');
 
 // Add subscription
 const addSubscription = async (req, res) => {
@@ -142,19 +143,41 @@ const getInsights = async (req, res) => {
     const today = new Date();
     const next7Days = new Date();
     next7Days.setDate(today.getDate() + 7);
-
     const renewingSoon = data
-  .filter(sub => {
-    const renewalDate = new Date(sub.next_renewal);
-    return renewalDate >= today && renewalDate <= next7Days;
-  })
-  .map(sub => ({
-    name: sub.name,
-    amount: sub.amount,
-    billing_cycle: sub.billing_cycle,
-    category: sub.category,
-    next_renewal: sub.next_renewal
-  }));
+    .filter(sub => {
+      const renewalDate = new Date(sub.next_renewal);
+      return renewalDate >= today && renewalDate <= next7Days;
+    })
+    .map(sub => {
+      const renewalDate = new Date(sub.next_renewal);
+      const daysLeft = Math.ceil((renewalDate - today) / (1000 * 60 * 60 * 24));
+
+      let urgency;
+      let message;
+
+      if (daysLeft <= 1) {
+        urgency = 'critical';
+        message = `⚠️ ${sub.name} renews TOMORROW for ₹${sub.amount} — last chance to cancel!`;
+      } else if (daysLeft <= 3) {
+        urgency = 'high';
+        message = `🔔 ${sub.name} renews in ${daysLeft} days for ₹${sub.amount} — act now if you want to cancel.`;
+      } else {
+        urgency = 'medium';
+        message = `📅 ${sub.name} renews in ${daysLeft} days for ₹${sub.amount} — review if you want to continue.`;
+      }
+
+      return {
+        name: sub.name,
+        amount: sub.amount,
+        billing_cycle: sub.billing_cycle,
+        category: sub.category,
+        next_renewal: sub.next_renewal,
+        days_left: daysLeft,
+        urgency,
+        message
+      };
+    })
+    .sort((a, b) => a.days_left - b.days_left);
     // Spend by category
     const byCategory = {};
     data.forEach(sub => {
@@ -167,6 +190,22 @@ const getInsights = async (req, res) => {
 
     const aiSuggestions = generateInsights(data);
 
+    // Send email alerts for critical and high urgency renewals
+    const urgentRenewals = renewingSoon.filter(sub => 
+      sub.urgency === 'critical' || sub.urgency === 'high'
+    );
+
+    if (urgentRenewals.length > 0) {
+      const userResult = await pool.query(
+        'SELECT email FROM users WHERE id = $1',
+        [userId]
+      );
+      const userEmail = userResult.rows[0].email;
+
+      for (const sub of urgentRenewals) {
+        await sendRenewalAlert(userEmail, sub);
+      }
+    }
     res.status(200).json({
       total_subscriptions: totalCount,
       monthly_spend: monthlySpend.toFixed(2),
