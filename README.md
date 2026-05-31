@@ -7,6 +7,7 @@
 ![Express](https://img.shields.io/badge/Express-000000?style=flat-square&logo=express&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![JWT](https://img.shields.io/badge/JWT-000000?style=flat-square&logo=jsonwebtokens&logoColor=white)
+![SendGrid](https://img.shields.io/badge/Email-SendGrid-00B2FF?style=flat-square)
 ![Render](https://img.shields.io/badge/Deployed_on-Render-46E3B7?style=flat-square)
 
 🌐 **Live API:** [https://subscription-tracker-api-t2s0.onrender.com](https://subscription-tracker-api-t2s0.onrender.com)
@@ -29,8 +30,13 @@ Most people subscribe to 5-10 services — Netflix, Spotify, AWS, Notion, and mo
 - 🔐 **Secure Authentication** — JWT-based register & login
 - 📋 **Subscription Management** — full CRUD operations
 - 📊 **Spending Insights** — monthly & yearly spend, category breakdown
-- 🔔 **Renewal Alerts** — see what's renewing in the next 7 days
-- 🤖 **AI-Powered Suggestions** — smart recommendations on which subscriptions to cancel
+- 🔔 **Smart Renewal Alerts** — critical/high/medium urgency based on days left
+- 📧 **Email Notifications** — automated renewal alerts via SendGrid
+- 🤖 **AI-Powered Suggestions** — rule-based recommendation engine that detects:
+  - High cost subscriptions
+  - Overlapping services (Spotify + YouTube Premium, ChatGPT + Claude)
+  - Cloud cost optimization opportunities
+  - Category consolidation opportunities
 - ✅ **Input Validation** — clean error messages for invalid data
 - 🚀 **Production Deployed** — live on Render with auto-deployment
 
@@ -45,6 +51,7 @@ Most people subscribe to 5-10 services — Netflix, Spotify, AWS, Notion, and mo
 | Database | PostgreSQL (Neon) | Reliable relational data |
 | Auth | JWT + bcrypt | Stateless, secure authentication |
 | Validation | express-validator | Clean input validation |
+| Email | SendGrid | Transactional email notifications |
 | Deployment | Render | Auto-deploy on every push |
 
 ---
@@ -64,7 +71,7 @@ Most people subscribe to 5-10 services — Netflix, Spotify, AWS, Notion, and mo
 | GET | `/api/subscriptions` | Get all subscriptions |
 | PUT | `/api/subscriptions/:id` | Update a subscription |
 | DELETE | `/api/subscriptions/:id` | Delete a subscription |
-| GET | `/api/subscriptions/insights` | Get spending insights + AI suggestions |
+| GET | `/api/subscriptions/insights` | Get spending insights + AI suggestions + renewal alerts |
 
 ---
 
@@ -73,6 +80,7 @@ Most people subscribe to 5-10 services — Netflix, Spotify, AWS, Notion, and mo
 ### Prerequisites
 - Node.js v18+
 - PostgreSQL database (or Neon free tier)
+- SendGrid account (for email notifications)
 
 ### Local Setup
 
@@ -88,7 +96,7 @@ npm install
 
 # Create .env file
 cp .env.example .env
-# Add your DATABASE_URL, JWT_SECRET, PORT
+# Add your environment variables
 
 # Start development server
 npm run dev
@@ -101,23 +109,58 @@ npm run dev
 ### Spending Insights
 ```json
 {
-  "total_subscriptions": 3,
-  "monthly_spend": "968.00",
-  "yearly_spend": "11616.00",
+  "total_subscriptions": 5,
+  "monthly_spend": "4626.00",
+  "yearly_spend": "55512.00",
   "renewing_soon": [
     {
       "name": "Netflix",
       "amount": "649.00",
       "billing_cycle": "monthly",
-      "next_renewal": "2026-05-30"
+      "days_left": 1,
+      "urgency": "critical",
+      "message": "⚠️ Netflix renews TOMORROW for ₹649.00 — last chance to cancel!"
     }
   ],
   "spend_by_category": {
     "entertainment": 768,
-    "cloud": 2400
-  }
+    "cloud": 2400,
+    "ai tools": 3350
+  },
+  "ai_suggestions": [
+    {
+      "subscription": "ChatGPT",
+      "type": "overlap",
+      "severity": "high",
+      "message": "You have both ChatGPT and Claude — overlapping AI assistants costing ₹3350/month. Both do similar tasks — pick the one you use most and cancel the other."
+    },
+    {
+      "subscription": "AWS",
+      "type": "cloud_optimization",
+      "severity": "medium",
+      "message": "Your AWS bill is ₹2400. Consider reserved instances or savings plans — can reduce costs by up to 72%."
+    }
+  ]
 }
 ```
+
+---
+
+## 🤖 AI Recommendation Engine
+
+Built a two-layer rule-based recommendation engine:
+
+**Generic Rules** — apply to any subscription:
+- Flag subscriptions above ₹500/month
+- Detect category consolidation opportunities
+- Identify yearly plans that cost more than monthly
+
+**Specific Rules** — detect popular overlapping services:
+- Spotify + YouTube Premium → overlapping music
+- Netflix + Prime + Hotstar → too many streaming
+- ChatGPT + Claude → overlapping AI tools
+- LinkedIn + Naukri → overlapping job platforms
+- AWS/GCP → cloud cost optimization
 
 ---
 
@@ -136,17 +179,20 @@ npm run dev
 ```
 subscription-tracker-api/
 ├── config/
-│   └── db.js                    ← PostgreSQL connection pool
+│   └── db.js                     ← PostgreSQL connection pool
 ├── controllers/
-│   ├── authController.js        ← Register & login logic
-│   └── subscriptionController.js ← CRUD & insights logic
+│   ├── authController.js         ← Register & login logic
+│   └── subscriptionController.js ← CRUD, insights & AI engine
 ├── middleware/
-│   └── authMiddleware.js        ← JWT verification
+│   └── authMiddleware.js         ← JWT verification
 ├── routes/
-│   ├── authRoutes.js            ← Auth endpoints + validation
-│   └── subscriptionRoutes.js   ← Subscription endpoints + validation
-├── .env                         ← Environment variables (not committed)
-├── server.js                    ← App entry point
+│   ├── authRoutes.js             ← Auth endpoints + validation
+│   └── subscriptionRoutes.js    ← Subscription endpoints + validation
+├── utils/
+│   └── emailService.js          ← SendGrid email notifications
+├── .env                          ← Environment variables (not committed)
+├── .env.example                  ← Environment variable template
+├── server.js                     ← App entry point
 └── package.json
 ```
 
@@ -154,8 +200,9 @@ subscription-tracker-api/
 
 ## 🌱 Upcoming Features
 
-- [ ] SMS alerts before subscription renewal
-- [ ] AI-powered cancel suggestions
+- [x] Email alerts before subscription renewal ✅
+- [x] AI-powered cancel suggestions ✅
+- [ ] Bank statement PDF parser
 - [ ] React frontend dashboard
 - [ ] Multi-currency support
 
